@@ -6,16 +6,32 @@
 #include "MessageEndpoint.h"
 #include "IMessageContext.h"
 #include "HAL/ThreadSafeBool.h"
+#include "HAL/RunnableThread.h"
+#include "HAL/Runnable.h"
 
-#include "Networking.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
-#include <memory>
-#include <vector>
-#include <unordered_map>
+
+#if PLATFORM_WINDOWS
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include "Windows/AllowWindowsPlatformAtomics.h"
+#endif
+#include "RTProtocol.h"
+#if PLATFORM_WINDOWS
+#include "Windows/HideWindowsPlatformAtomics.h"
+#include "Windows/HideWindowsPlatformTypes.h"
+#endif
+
+DECLARE_LOG_CATEGORY_EXTERN(QTMConnectLiveLinkLog,Log,All);
 
 class ILiveLinkClient;
-class CRTProtocol;
+
+
+class QTMCONNECTLIVELINK_API FCRTProtocalWrapper:public CRTProtocol, public TSharedFromThis<FCRTProtocalWrapper>{
+public:
+	FCRTProtocalWrapper():CRTProtocol(){};
+};
+
 
 class QTMCONNECTLIVELINK_API QTMConnectLiveLinkSettings
 {
@@ -34,8 +50,8 @@ public:
 	bool StreamSkeleton;
     bool StreamForce;
     FString StreamRate;
-    unsigned int FrequencyValue;
-    static const std::vector<FString> STREAMRATES;
+    uint32 FrequencyValue;
+    static const TArray<FString> STREAMRATES;
 };
 
 class QTMCONNECTLIVELINK_API FQTMConnectLiveLinkSource : public ILiveLinkSource, public FRunnable
@@ -106,7 +122,7 @@ private:
 	// List of subjects we've already encountered
     TArray<FLiveLinkSubjectKey> EncounteredSubjects;
 
-    std::shared_ptr<CRTProtocol> mRTProtocol;
+    TSharedPtr<FCRTProtocalWrapper> mRTProtocol;
 
-    std::unordered_map<std::uint32_t, FString> mForceIdToName;
+    TMap<uint32, FString> mForceIdToName;
 };

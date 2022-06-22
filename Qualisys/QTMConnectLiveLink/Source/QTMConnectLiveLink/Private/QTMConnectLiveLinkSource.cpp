@@ -8,14 +8,9 @@
 #include "Roles/LiveLinkTransformTypes.h"
 #include "Roles/LiveLinkBasicRole.h"
 
-#include "Windows/AllowWindowsPlatformTypes.h"
-#include "Windows/AllowWindowsPlatformAtomics.h"
-#include "RTProtocol.h"
-#include "Windows/HideWindowsPlatformAtomics.h"
-#include "Windows/HideWindowsPlatformTypes.h"
 #include "CommonFrameRates.h"
 
-#include <string>
+DEFINE_LOG_CATEGORY(QTMConnectLiveLinkLog)
 
 #define LOCTEXT_NAMESPACE "QTMConnectLiveLinkSource"
 
@@ -26,7 +21,7 @@ const FName markersParentName = "Markers";
 #pragma optimize("", off)
 
 
-const std::vector<FString> QTMConnectLiveLinkSettings::STREAMRATES({"All Frames", "Frequency", "Frequency Divisor"});;
+const TArray<FString> QTMConnectLiveLinkSettings::STREAMRATES({"All Frames", "Frequency", "Frequency Divisor"});;
 
 QTMConnectLiveLinkSettings QTMConnectLiveLinkSettings::FromString(const FString& settingsString)
 {
@@ -125,7 +120,7 @@ void FQTMConnectLiveLinkSource::DisconnectFromQTM()
     {
         mRTProtocol->StreamFramesStop();
         mRTProtocol->Disconnect();
-        mRTProtocol.reset();
+        mRTProtocol.Reset();
     }
 }
 
@@ -200,12 +195,12 @@ void ConstructLiveLinkTimeCode(int rate, int seconds, FQualifiedFrameTime& timeC
     timeCode.Time = FFrameTime(UnrealTimecode.ToFrameNumber(timeCode.Rate));
 }
 
-float CalculateTimecodeFrequency(std::shared_ptr<CRTProtocol> rtProtocol)
+float CalculateTimecodeFrequency(TSharedPtr<FCRTProtocalWrapper> rtProtocol)
 {
     if (rtProtocol == nullptr)
         return 0.0f;
 
-    uint32_t frequency;
+    uint32 frequency;
     float captureTime;
     bool startOnTrig;
     bool trigNo;
@@ -218,10 +213,10 @@ float CalculateTimecodeFrequency(std::shared_ptr<CRTProtocol> rtProtocol)
     rtProtocol->GetGeneralSettings(frequency, captureTime, startOnTrig, trigNo, trigNc, trigSoftware, eProcessingActions, eRtProcessingActions, eReprocessingActions);
 
     bool bEnabled; CRTProtocol::ESignalSource eSignalSource;
-    bool bSignalModePeriodic; unsigned int nFreqMultiplier;
-    unsigned int nFreqDivisor; unsigned int nFreqTolerance;
+    bool bSignalModePeriodic; uint32 nFreqMultiplier;
+    uint32 nFreqDivisor; uint32 nFreqTolerance;
     float fNominalFrequency; bool bNegativeEdge;
-    unsigned int nSignalShutterDelay; float fNonPeriodicTimeout;
+    uint32 nSignalShutterDelay; float fNonPeriodicTimeout;
     rtProtocol->GetExtTimeBaseSettings(bEnabled, eSignalSource, bSignalModePeriodic, nFreqMultiplier, nFreqDivisor, nFreqTolerance, fNominalFrequency, bNegativeEdge, nSignalShutterDelay, fNonPeriodicTimeout);
     if (bEnabled)
     {
@@ -248,7 +243,7 @@ uint32 FQTMConnectLiveLinkSource::Run()
     {
         if (mRTProtocol == nullptr)
         {
-            mRTProtocol = std::make_shared<CRTProtocol>();
+            mRTProtocol = MakeShared<FCRTProtocalWrapper>();
         }
         if (!mRTProtocol->Connected())
         {
@@ -259,13 +254,13 @@ uint32 FQTMConnectLiveLinkSource::Run()
                     const auto discoverResponses = mRTProtocol->GetNumberOfDiscoverResponses();
                     if (discoverResponses >= 1)
                     {
-                        unsigned int addr;
-                        unsigned short basePort;
+                        uint32 addr;
+                        uint16 basePort;
                         std::string message;
                         if (mRTProtocol->GetDiscoverResponse(0, addr, basePort, message))
                         {
                             char serverAddr[40];
-                            sprintf_s(serverAddr, "%d.%d.%d.%d", 0xff & addr, 0xff & (addr >> 8), 0xff & (addr >> 16), 0xff & (addr >> 24));
+                            UE_LOG(QTMConnectLiveLinkLog,Log,TEXT("%d.%d.%d.%d"),0xff & addr, 0xff & (addr >> 8), 0xff & (addr >> 16), 0xff & (addr >> 24));
                             serverAddress = serverAddr;
                         }
                     }
@@ -273,7 +268,7 @@ uint32 FQTMConnectLiveLinkSource::Run()
             }
             SourceMachineName = FText::FromString(serverAddress.c_str());
 
-            unsigned short udpPort = 0;
+            uint16 udpPort = 0;
             if (!mRTProtocol->Connect(serverAddress.c_str(), QTM_STREAMING_PORT))
             {
                 SourceStatus = FText::FromString(ANSI_TO_TCHAR(mRTProtocol->GetErrorString()));
@@ -432,21 +427,21 @@ uint32 FQTMConnectLiveLinkSource::Run()
                     {
                     case CRTPacket::TimecodeSMPTE:
                     {
-                        int hours, minutes, seconds, frame;
+                        int32 hours, minutes, seconds, frame;
                         packet->GetTimecodeSMPTE(hours, minutes, seconds, frame);
                         ConstructLiveLinkTimeCode(timecodeFrequency, hours, minutes, seconds, frame, sceneTime);
                         break;
                     }
                     case CRTPacket::TimecodeIRIG:
                     {
-                        int year, day, hours, minutes, seconds, tenths;
+                        int32 year, day, hours, minutes, seconds, tenths;
                         packet->GetTimecodeIRIG(year, day, hours, minutes, seconds, tenths);
                         ConstructLiveLinkTimeCode(timecodeFrequency, hours, minutes, seconds, 0, sceneTime);
                         break;
                     }
                     case CRTPacket::TimecodeCamerTime:
                     {
-                        unsigned __int64 cameraTime;
+                        uint64 cameraTime; //for windows platforms uint64 resolves to unsigned long long which is synonymous with unsigned __int64
                         packet->GetTimecodeCameraTime(cameraTime);
                         const auto seconds = (cameraTime / 10000000);
                         ConstructLiveLinkTimeCode(timecodeFrequency, seconds, sceneTime);
@@ -475,7 +470,7 @@ uint32 FQTMConnectLiveLinkSource::Run()
                     TArray<FTransform>& transforms = subjectFrame.Transforms;
                     transforms.SetNumUninitialized(segmentCount);
 
-                    for (unsigned int segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
+                    for (uint32 segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
                     {
                         CRTProtocol::SSettingsSkeletonSegment settings;
                         mRTProtocol->GetSkeletonSegment(skeletonIndex, segmentIndex, &settings);
@@ -510,7 +505,7 @@ uint32 FQTMConnectLiveLinkSource::Run()
             {
                 // Push rigid body transforms
                 const auto rigidBodyCount = packet->Get6DOFBodyCount();
-                for (unsigned int rigidBodyIndex = 0; rigidBodyIndex < rigidBodyCount; rigidBodyIndex++)
+                for (uint32 rigidBodyIndex = 0; rigidBodyIndex < rigidBodyCount; rigidBodyIndex++)
                 {
                     FLiveLinkFrameDataStruct frameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkTransformFrameData::StaticStruct());
                     FLiveLinkTransformFrameData& subjectFrame = *frameDataStruct.Cast<FLiveLinkTransformFrameData>();
@@ -546,7 +541,7 @@ uint32 FQTMConnectLiveLinkSource::Run()
 
                 if (markerCount > 0)
                 {
-                    for (unsigned int markerIndex = 0; markerIndex < markerCount; markerIndex++)
+                    for (uint32 markerIndex = 0; markerIndex < markerCount; markerIndex++)
                     {
                         FLiveLinkFrameDataStruct frameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkTransformFrameData::StaticStruct());
                         FLiveLinkTransformFrameData& subjectFrame = *frameDataStruct.Cast<FLiveLinkTransformFrameData>();
@@ -619,7 +614,7 @@ void FQTMConnectLiveLinkSource::CreateLiveLinkSubjects()
     {
         // Skeleton
         const auto skeletonCount = mRTProtocol->GetSkeletonCount();
-        for (unsigned int skeletonIndex = 0; skeletonIndex < skeletonCount; skeletonIndex++)
+        for (uint32 skeletonIndex = 0; skeletonIndex < skeletonCount; skeletonIndex++)
         {
             const FName skeletonName = mRTProtocol->GetSkeletonName(skeletonIndex);
             const auto segmentCount = mRTProtocol->GetSkeletonSegmentCount(skeletonIndex);
@@ -630,7 +625,7 @@ void FQTMConnectLiveLinkSource::CreateLiveLinkSubjects()
             boneParents.SetNumUninitialized(segmentCount);
 
             // Get all names from RT server
-            for (unsigned int segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
+            for (uint32 segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++)
             {
                 CRTProtocol::SSettingsSkeletonSegment segment;
                 mRTProtocol->GetSkeletonSegment(skeletonIndex, segmentIndex, &segment);
@@ -652,7 +647,7 @@ void FQTMConnectLiveLinkSource::CreateLiveLinkSubjects()
     {
         // Rigid body
         const auto rigidBodyCount = mRTProtocol->Get6DOFBodyCount();
-        for (unsigned int rigidBodyIndex = 0; rigidBodyIndex < rigidBodyCount; rigidBodyIndex++)
+        for (uint32 rigidBodyIndex = 0; rigidBodyIndex < rigidBodyCount; rigidBodyIndex++)
         {
             const FName name = mRTProtocol->Get6DOFBodyName(rigidBodyIndex);
 
@@ -666,7 +661,7 @@ void FQTMConnectLiveLinkSource::CreateLiveLinkSubjects()
     {
         const auto markerCount = mRTProtocol->Get3DLabeledMarkerCount();
 
-        for (unsigned int markerIndex = 0; markerIndex < markerCount; markerIndex++)
+        for (uint32 markerIndex = 0; markerIndex < markerCount; markerIndex++)
         {
             const FName name = mRTProtocol->Get3DLabelName(markerIndex);
 
@@ -680,9 +675,9 @@ void FQTMConnectLiveLinkSource::CreateLiveLinkSubjects()
     {
         const auto forcePlateCount = mRTProtocol->GetForcePlateCount();
 
-        for (unsigned int forcePlateIndex = 0; forcePlateIndex < forcePlateCount; forcePlateIndex++)
+        for (uint32 forcePlateIndex = 0; forcePlateIndex < forcePlateCount; forcePlateIndex++)
         {
-            unsigned int        nPlateID, nAnalogDeviceID, nFrequency;
+            uint32       nPlateID, nAnalogDeviceID, nFrequency;
             float               fLength, fWidth;
             char* pType;
             char* pName;
@@ -717,7 +712,7 @@ void FQTMConnectLiveLinkSource::ClearSubjects()
         Client->RemoveSubject_AnyThread(subject);
     }
     EncounteredSubjects.Empty();
-    mForceIdToName.clear();
+    mForceIdToName.Empty();
 }
 
 #pragma optimize("", on)
